@@ -24,7 +24,7 @@ public class OpeChain {
         conf.set(RestOptions.PORT, 8081);
         StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironmentWithWebUI(conf);
         env.setParallelism(1);
-        env.disableOperatorChaining(); // 全局禁用算子链
+        env.disableOperatorChaining(); // 全局禁用算子链(打散算子)
         //2. 从指定的网络端口中读取数据
         DataStreamSource<String> socketDS = env.socketTextStream("bg01", 7777);
         //3. 对读取的数据进行扁平化处理
