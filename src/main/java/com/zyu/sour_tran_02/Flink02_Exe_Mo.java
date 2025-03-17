@@ -1,4 +1,4 @@
-package com.zyu.base02;
+package com.zyu.sour_tran_02;
 
 import org.apache.flink.api.common.RuntimeExecutionMode;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;

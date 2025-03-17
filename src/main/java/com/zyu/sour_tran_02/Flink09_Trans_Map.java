@@ -1,8 +1,7 @@
-package com.zyu.base02;
+package com.zyu.sour_tran_02;
 
 import com.zyu.bean.WaterSensor;
 import com.zyu.func.MyMapFunction;
-import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;

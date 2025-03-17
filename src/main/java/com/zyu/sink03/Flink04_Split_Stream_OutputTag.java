@@ -1,4 +1,4 @@
-package com.zyu.base03;
+package com.zyu.sink03;
 
 import com.zyu.bean.WaterSensor;
 import com.zyu.func.WaterSensorMapFunction;

@@ -1,4 +1,4 @@
-package com.zyu.base03;
+package com.zyu.sink03;
 
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;

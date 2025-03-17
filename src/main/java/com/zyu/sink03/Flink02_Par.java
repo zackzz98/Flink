@@ -1,4 +1,4 @@
-package com.zyu.base03;
+package com.zyu.sink03;
 
 import org.apache.flink.api.common.functions.Partitioner;
 import org.apache.flink.configuration.Configuration;
