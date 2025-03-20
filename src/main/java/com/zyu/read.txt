@@ -1,0 +1,145 @@
+转换算子
+map,filter,flatMap
+map:一对一
+filter:过滤
+flatMap:一对多
+
+聚合算子
+sum,min,minBy,max,maxBy,reduce
+sum:求和
+min,minBy,max,maxBy: min返回的是最小值,minBy返回的是该字段中具有最小值的元素(max,maxBy同理)
+reduce:当流中只有一条数据时,不会执行reduce
+
+富函数:
+1.所有Flink函数类都有其Rich版本
+2.富函数有一个生命周期的概念
+    open() 初始化
+    close() 结束
+    getRuntimeContext() 提供函数执行的并行度,任务名字,state状态等
+
+分区算子 (学习文档：https://www.hangge.com/blog/cache/detail_3841.html)
+shuffle(随机分区)：将上游数据随机分发到下游算子实例的每个分区中
+    (底层对应的是ShufflePartitioner这个类，类里面有一个selectChannel函数，这个函数会计算数据将会被发送哪个分区，里面是random.nextInt，是随机的)
+rebalance(重平衡分区)：将输出元素以轮询方式均匀地分布到下一个算子的实例中,有助于均匀地分布数据
+    (底层对应的是RebalancePartitioner这个类，类里面有一个setup和selectChannel函数，setup函数会根据分区数初始化一个随机值nextChannelToSendTo，
+    然后 selectChannel 函数会使用 nextChannelToSendTo 加 1 和分区数取模，把计算的值再赋给 nextChannelToSendTo ，
+    后面以此类推，其实就可以实现向下游算子实例的多个分区循环发送数据了，这样每个分区获取到的数据基本一致)
+rescale(重分区)：将输出元素以轮询的方式均匀地分布下一个算子的实例子集
+    (底层对应的是RescalePartitioner这个类类里面有一个 selectChannel 函数，这里面的 numberOfChannels 是分区数量，其实也可以认为是我们所说的算子的并行度，因为一个分区是由一个线程负责处理的，它们两个是一一对应的)
+broadcast(广播分区)：将输出元素广播到下一个算子的每个并行实例，适合于大数据集Join小数据集的场景，可以提高性能
+    (底层对应的是 BroadcastPartitioner 这个类。看这个类中的 selectChannel 函数代码的注释，提示广播分区不支持选择 Channel，因为会输出数据到下游的每个 Channel 中，就是发送到下游算子实例的每个分区中)
+global(全局分区)：将所有数据发送到下游的一个并行子任务中
+    (该方法使用 GlobalPartitioner 分区程序来设置 DataStream 的分区，以便将输出值都转到下一个处理操作符（算子）的第一个实例。使用此设置时要小心，因为它可能会在应用程序中造成严重的性能瓶颈。)
+keyBy(按键分区)：根据 key 的分组索引选择目标通道，将输出元素发送到相对应的下游分区
+    (使用 KeyGroupStreamPartitioner 分区程序来设置 DataStream 的分区)
+forward(转发分区)：将输出元素被转发到下一个操作（算子）的本地子任务
+    (在上下游的算子没有指定分区器的情况下，如果上下游的算子并行度一致，则使用 ForwardPartitioner，否则使用 RebalancePartitioner。
+    对于 ForwardPartitioner，必须保证上下游算子并行度一致，即上有算子与下游算子是 1 对 1 的关系，否则会抛出异常。)
+    (forward 方法使用 ForwardPartitioner 分区程序来设置 DataStream 的分区，仅将元素转发到本地运行的下游操作（算子）)
+custom partition(自定义分区)：自定义分区策略的 API 为 CustomPartitionerWrapper。该策略允许开发者自定义规则将上游算子元素发送到下游指定的算子实例中。
+              使用该分区策略首先我们需要新建一个自定义分区器，然后使用这个自定义分区器进行分区。
+
+分流：
+filter：本质工作是过滤，如果通过filter进行分流的话，同一条流可能会被处理多次，效率低，所以一般不用
+侧输出流：原理是对流中数据进行处理的时候，给元素打标签，所以使用侧输出流的时候，需要先创建标签对象，创建标签对象的时候，需要注意会存在泛型擦除问题
+        (以匿名内部类方式创建对象，在创建对象时，指定泛型类型)
+合流：
+union：可以合并两条流或者多条流，参与合并的流的数据类型必须一致
+connect：对两条流就行合并
+
+
+
+Flink 时间语义
+摄入时间：元素进入到Source算子的时间
+事件时间：元素产生的时间
+处理时间：元素到了算子,算子对其进行处理的时间
+注：Flink1.12开始,默认的时间语义是事件时间语义
+
+窗口：
+将无限的数据划分为有限的数据块
+分类：
+按照驱动形式分：时间窗口(按照时间定义窗口的起始以及结束)、计数窗口(按照窗口中元素的个数定义窗口的起始及结束)
+按照数据划分分方式：滚动窗口、滑动窗口、会话窗口、全局窗口
+··滚动窗口(窗口大小固定、窗口和窗口之间不会重叠、窗口和窗口是首尾相接、元素只会属于一个窗口)
+··滑动窗口(窗口大小固定、窗口和窗口可能会重叠、窗口和窗口不是首尾相接、同一个元素会属于对个窗口、 窗口大小/滑动步长)
+··会话窗口(窗口大小不是固定、窗口和窗口之间不会重叠、窗口和窗口不是首尾相接、窗口之间会存在时间间隔(size)、元素只会属于一个窗口)
+··全局窗口(将流中数据放到同一个窗口中,默认情况下,是没有结束的、需要手动指定触发器,指定窗口的结束时机、计数窗口的底层就是全局窗口)
+
+窗口API
+是否在开窗前进行了KeyBy
+keyBy:针对keyBy之后的每一个组进行开窗,组和组之间相互不影响
+··时间窗口 window()、windowAll()
+··计数窗口 countWindow()、countWindowAll(窗口大小)、countWindowAll(窗口大小,滑动步长)
+no-keyBy:针对整条流进行开窗,相当于并行度设置为1
+··时间窗口 windowAll()
+··计数窗口 countWindowAll(窗口大小)、countWindowAll(窗口大小,滑动步长)
+
+窗口分配器
+        开什么类型的窗口
+        计数窗口
+            滚动计数窗口
+                countWindow[All](窗口大小)
+            滑动计数窗口
+                countWindow[All](窗口大小,滑动步长)
+        时间窗口
+            .window()
+            .windowAll()
+            滚动处理时间窗口
+                TumblingProcessingTimeWindows
+            滑动处理时间窗口
+                SlidingProcessingTimeWindows
+            处理时间会话窗口
+                ProcessingTimeSessionWindows
+            滚动事件时间窗口
+                TumblingEventTimeWindows
+            滑动事件时间窗口
+                SlidingEventTimeWindows
+            事件时间会话窗口
+                EventTimeSessionWindows
+        全局窗口
+            stream.keyBy(...)
+                   .window(GlobalWindows.create());
+
+        以滚动处理时间为例，说明窗口的生命周期
+            窗口对象什么时候创建
+                属于窗口的第一个元素到来的时候，创建窗口对象
+
+            窗口对象的起始和结束时间
+                起始时间:向下取整
+                结束时间:起始时间  +  窗口大小
+                [起始时间,结束时间)
+                最大时间: 结束时间 - 1ms
+
+            窗口什么时候触发计算和关闭
+                系统时间到了窗口的最大时间
+
+    窗口处理函数
+        如何对窗口中数据进行处理
+        增量处理
+            窗口数据来一条计算一次，不会缓存数据  优点：省空间      缺点：不能获取更丰富的窗口信息
+            reduce
+                窗口中元素类型以及向下游传递的类型必须一致
+                reduce(value1,value2)
+                    value1:中间累加的结果
+                    value2:新来的数据
+                注意：如果窗口中只有一条数据，reduce方法不会被调用
+            aggregate
+                窗口中的元素类型、累加器类型以及向下游传递的类型可以不一致
+                createAccumulator:窗口中第一条数据到来的时候执行
+                add:窗口中每来一条数据都会执行
+                getResult:窗口触发计算的时候执行的方法
+                merge:只有会话才需要重写
+        全量处理
+            窗口数据到来的时候不会马上计算，等窗口触发计算的时候，在整体进行计算  优点：可以获取更丰富的窗口信息  缺点：费空间
+            apply
+            process
+                更底层，可以通过上下文对象获取窗口对象以及其它一些信息
+
+        在实际开发的过程中，可以增量 + 全量
+
+
+    窗口触发器
+        什么时候触发窗口的计算
+
+    窗口移除器
+        在窗口触发计算之后，在处理函数执行之前(之后)，需要执行的移除操作是什么
