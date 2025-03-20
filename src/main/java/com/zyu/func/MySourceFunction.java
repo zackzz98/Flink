@@ -8,6 +8,7 @@ import java.util.Random;
 /**
  * @author zyu
  * date2025/3/19 10:39
+ * 自定义了一个随机生成传感器类型的数据source
  */
 public class MySourceFunction implements SourceFunction<WaterSensor> {
     private volatile boolean isRunning = true;
