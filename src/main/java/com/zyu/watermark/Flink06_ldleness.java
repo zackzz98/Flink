@@ -16,41 +16,44 @@ import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.util.Collector;
 
+import java.time.Duration;
+
 /**
  * @author zyu
- * date2025/3/20 17:43
- * 本案例展示了水位线的传递
+ * date2025/3/21 14:58
+ * 本案例展示了空闲数据源
  */
-public class Flink04_pass_1 {
+public class Flink06_ldleness {
     public static void main(String[] args) throws Exception {
         // 创建执行环境
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        // 设置并行度为2
         env.setParallelism(2);
-        // 获取数据
+
+        // 从指定的网络端口获取数据
         DataStreamSource<String> socketDS = env.socketTextStream("localhost", 8888);
 
+        // 对流中数据进行类型转换
+        SingleOutputStreamOperator<WaterSensor> wsDS = socketDS.map(new WaterSensorMapFunction());
+
         // 指定Watermark的生成策略&提取事件时间字段
-        SingleOutputStreamOperator<String> watermarkDS = socketDS.assignTimestampsAndWatermarks(
+        SingleOutputStreamOperator<WaterSensor> watermarkDS = wsDS.assignTimestampsAndWatermarks(
                 WatermarkStrategy
-                        .<String>forMonotonousTimestamps()
+                        .<WaterSensor>forMonotonousTimestamps()
                         .withTimestampAssigner(
-                                new SerializableTimestampAssigner<String>() {
+                                new SerializableTimestampAssigner<WaterSensor>() {
                                     @Override
-                                    public long extractTimestamp(String lineStr, long recordTimestamp) {
-                                        String[] fieldArr = lineStr.split(",");
-                                        return Long.valueOf(fieldArr[1]);
+                                    public long extractTimestamp(WaterSensor ws, long recordTimestamp) {
+                                        return ws.getTs();
                                     }
                                 }
                         )
+                        .withIdleness(Duration.ofSeconds(10)) // 注意：这里的时间是系统时间
         );
-        // 对流中的数据进行类型转换
-        SingleOutputStreamOperator<WaterSensor> wsDS = watermarkDS.map(new WaterSensorMapFunction());
         // 按照传感器id进行分组
-        KeyedStream<WaterSensor, String> keyedDS = wsDS.keyBy(WaterSensor::getId);
-        // 开窗 -- 滚动事件时间窗口
-        WindowedStream<WaterSensor, String, TimeWindow> windowDS = keyedDS.window(TumblingEventTimeWindows.of(Time.milliseconds(10)));
-        // 聚合计算
+        KeyedStream<WaterSensor, String> keyedDS = watermarkDS.keyBy(WaterSensor::getId);
+        // 开窗
+        WindowedStream<WaterSensor, String, TimeWindow> windowDS = keyedDS.window(TumblingEventTimeWindows.of(Time.seconds(10)));
+        // 对窗口的数据进行处理
         SingleOutputStreamOperator<String> processDS = windowDS.process(
                 new ProcessWindowFunction<WaterSensor, String, String, TimeWindow>() {
                     @Override
