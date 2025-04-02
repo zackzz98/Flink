@@ -274,3 +274,117 @@ FlinkAPI 双流Join
             timerService.deleteProcessingTimeTimer(10);
         删除事件时间定时器
             timerService.deleteEventTimeTimer(10)
+
+
+状态
+    用于保存程序运行的中间结果
+状态分类
+    原始状态
+        由程序员自己开辟内存，自己负责状态的序列化以及容错恢复等
+    托管状态
+        由Flink框架管理状态的存储、序列化以及容错恢复等
+        算子状态
+            作用范围: 算子的每一个并行子任务上(分区、并行度、slot)
+            ListState
+            UnionListState
+            BroadcastState(重点)
+            使用步骤
+                类必须实现checkpointedFunction接口
+                    initializeState:初始化状态
+                    snapshotState:对状态进行备份
+                算子状态和普通成员变量声明的位置一样，作用范围范围一样，但是不同的是算子状态可以被持久化
+                其实算子状态底层在snapshotState就是将普通的变量放到状态中进行的持久化，相当于普通的变量也被持久保存了
+
+
+        键控状态
+            作用范围:经过keyBy之后的每一个组，组和组之间状态是隔离的
+            ValueState
+            ListState
+            MapState
+            ReducintState
+            AggregatingState
+            使用步骤
+                在处理函数类成员变量位置声明状态，注意：虽然在成员变量位置声明，但是作用范围是keyBy后的每一个组
+                在open方法中对状态进行初始化
+                在具体的处理函数中使用状态
+
+广播状态BroadcastState
+    也算是算子状态的一种，作用范围也是算子子任务
+    广播状态的使用方式是固定的
+
+状态后端
+    管理本地状态的存储方式和位置以及检查点的存储位置
+    检查点是对状态做的备份，是状态的一个副本
+    Flink1.13前
+                                      状态                     检查点
+        Memory                      TM堆内存                 JM的堆内存
+        Fs                          TM堆内存                 文件系统
+        RocksDB                     RocksDB库                文件系统
+
+    从Flink1.13开始
+                                      状态                     检查点
+        HashMap                     TM堆内存               JM的堆内存|文件系统
+        RocksDB                     RocksDB库              文件系统
+
+状态
+    用于保存程序运行的中间结果
+检查点
+    对状态的备份
+    是状态的快照(副本)
+    检查点是周期性的对状态进行备份，周期可以自己设置
+
+检查点备份时间
+    一条数据被程序的所有算子任务都处理过后再进行备份
+
+检查点底层算法
+    异步分界线快照算法
+    核心：分界线barrier
+    原理：当到了检查点的备份周期后，在JobManager上有一个叫检查点协调器的组件，它会向各个Source子任务发送一个检查点分界线barrier
+         然后Source算子上的状态会进行备份，barrier也会作为流中的一个元素，随着流的流动向下游传递，当barrier到了其它的transform算子，
+         transform算子的状态也会进行备份，当barrier到了了sink后，sink上状态也会进行备份。
+         当barrier已经从source走完sink了，说明barrier前的元素一定已经从source走完sink了，这个时候一次检查点备份完成
+
+         当程序遇到故障重启的时候，会从上次最完整的检查点中恢复状态数据
+
+检查点分界线的传递
+    如果上游一个并行度，下游是多个并行度，广播
+    如果上游多个并行度，下游是一个并行度，对齐或者非对齐
+    如果上游是多个并行度，下游也是多个并行度，先广播再对齐或者非对齐
+
+检查点分界线barrier算子
+    barrier对齐的精准一次
+        如果下游算子的数据来源于上游多个不同的并行度，需要等待上游各个并行度上barrier都到达下游算子任务后，才会对下游算子任务状态进行备份
+        在等到的过程中，如果barrier已经到达并行度上又有数据过来，不会对其进行处理，只是将数据放到缓存中，等barrier对齐后，再对数据进行处理
+        优点：保证一致性        缺点：时效性差
+    barrier对齐的至少一次
+        如果下游算子的数据来源于上游多个不同的并行度，需要等待上游各个并行度上barrier都到达下游算子任务后，才会对下游算子任务状态进行备份
+        在等到的过程中，如果barrier已经到达并行度上又有数据过来，直接会对新来的数据进行处理，新来的数据如果状态有影响的话，当出现故障重启重启
+        后，数据会被重复处理
+        优点：时效性好        缺点：数据可能重复
+    非barrier对齐的精准一次
+        如果下游算子的数据来源于上游多个不同的并行度，当上游的并行度上又barrier过来的时候
+        直接将当前barrier跳转到下游算子输出缓冲区末端
+        标记当前barrier跳过的数据以及其它未到达的barrier之前的数据
+        将标记的数据以及状态都进行备份
+
+        优点：时效性好 + 保证一致性    缺点：保存的内容变多  状态 + 数据
+
+检查点相关的设置
+    启用检查点
+    检查点存储
+    检查点模式（CheckpointingMode）
+    超时时间（checkpointTimeout）
+    最小间隔时间（minPauseBetweenCheckpoints）
+    最大并发检查点数量（maxConcurrentCheckpoints）
+    开启外部持久化存储（enableExternalizedCheckpoints）
+    检查点连续失败次数（tolerableCheckpointFailureNumber）
+    非对齐检查点（enableUnalignedCheckpoints）
+    对齐检查点超时时间（alignedCheckpointTimeout）
+
+    通用增量 checkpoint (changelog)
+    最终检查点
+
+保存点
+    和检查点一样，也是对状态进行备份的
+    底层算法一样
+    检查点是程序周期性的对状态进行备份；保存点是由程序员手动的对状态进行备份
